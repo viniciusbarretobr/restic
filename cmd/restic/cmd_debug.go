@@ -1,9 +1,11 @@
-// +build debug
+// xbuild debug
 
 package main
 
 import (
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -294,6 +296,35 @@ outer:
 	}
 }
 
+func sliceForAppend(in []byte, n int) (head, tail []byte) {
+	if total := len(in) + n; cap(in) >= total {
+		head = in[:total]
+	} else {
+		head = make([]byte, total)
+		copy(head, in)
+	}
+	tail = head[len(in):]
+	return
+}
+
+func decryptUnsigned(ctx context.Context, k *crypto.Key, buf []byte) []byte {
+	// strip signature at the end
+	l := len(buf)
+	nonce, ct := buf[:16], buf[16:l-16]
+	dst := make([]byte, 0, len(ct))
+
+	ret, out := sliceForAppend(dst, len(ct))
+
+	c, err := aes.NewCipher(k.EncryptionKey[:])
+	if err != nil {
+		panic(fmt.Sprintf("unable to create cipher: %v", err))
+	}
+	e := cipher.NewCTR(c, nonce)
+	e.XORKeyStream(out, ct)
+
+	return ret
+}
+
 func loadBlobs(ctx context.Context, repo restic.Repository, pack string, list []restic.Blob) error {
 	be := repo.Backend()
 	for _, blob := range list {
@@ -325,6 +356,25 @@ func loadBlobs(ctx context.Context, repo restic.Repository, pack string, list []
 			if tryRepair || repairByte {
 				tryRepairWithBitflip(ctx, key, buf, repairByte)
 			}
+			plain := decryptUnsigned(ctx, key, buf)
+			filename := fmt.Sprintf("%s.bin", blob.ID.String())
+			f, err := os.Create(filename)
+			if err != nil {
+				return err
+			}
+
+			_, err = f.Write(plain)
+			if err != nil {
+				_ = f.Close()
+				return err
+			}
+
+			err = f.Close()
+			if err != nil {
+				return err
+			}
+
+			fmt.Printf("decrypt of blob %v stored at %v\n", blob.ID.Str(), filename)
 			continue
 		}
 
