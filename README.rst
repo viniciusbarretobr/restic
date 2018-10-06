@@ -5,6 +5,8 @@ Introduction
 
 restic is a backup program that is fast, efficient and secure.
 
+restic supports Linux, MacOS, Windows and BSD or any operating system that is supported by Go.
+
 For detailed usage and installation instructions check out the `documentation <https://restic.readthedocs.io/en/latest>`__.
 
 You can ask questions in our `Discourse forum <https://forum.restic.net>`__.
